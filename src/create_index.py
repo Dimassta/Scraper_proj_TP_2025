@@ -1,131 +1,106 @@
 from elasticsearch import Elasticsearch
 import warnings
 
-
 warnings.filterwarnings("ignore", category=UserWarning, module="elasticsearch")
 
 es = Elasticsearch("http://localhost:9200")
 
-
+# Удаляем старый индекс (для тестирования)
 es.indices.delete(index="warha_news_index", ignore_unavailable=True)
 
-
-# index_body = {
-#     "mappings": {
-#         "properties": {
-#             "title": {"type": "text", "analyzer": "russian"},
-#             "author": {"type": "text"},
-#             "tags": {"type": "keyword"},
-#             "structured_content": {
-#                 "type": "nested",
-#                 "properties": {
-#                     "header": {"type": "text", "analyzer": "russian"},
-#                     "content": {
-#                         "type": "nested",
-#                         "properties": {
-#                             "text": {"type": "text", "analyzer": "russian"},
-#                             "images": {"type": "keyword"}
-#                         }
-#                     }
-#                 }
-#             },
-#             "link": {"type": "keyword"}
-#         }
-#     },
-#     "settings": {
-#         "analysis": {
-#             "analyzer": {
-#                 "russian": {
-#                     "type": "custom",
-#                     "tokenizer": "standard",
-#                     "filter": ["lowercase"]
-#                 }
-#             }
-#         }
-#     }
-# }
-
 index_body = {
+    "settings": {
+        "analysis": {
+            "tokenizer": {
+                "ngram_tokenizer": {
+                    "type": "ngram",
+                    "min_gram": 3,
+                    "max_gram": 4,
+                    "token_chars": ["letter", "digit"]
+                },
+                "hashtag_tokenizer": {
+                    "type": "pattern",
+                    "pattern": "(#\\w+)",
+                    "group": 1
+                }
+            },
+            "filter": {
+                "russian_stop": {
+                    "type": "stop",
+                    "stopwords_path": "analysis/stopwords/stopwords.txt"  # 1. Путь должен быть относительным внутри контейнера
+                },
+                "synonym_filter": {
+                    "type": "synonym",
+                    "synonyms_path": "analysis/synonyms/synonyms.txt",    # 2. Добавлены параметры безопасности
+                    "lenient": True
+                },
+                "edge_ngram_filter": {
+                    "type": "edge_ngram",                                 # 3. Исправлен порядок применения
+                    "min_gram": 2,
+                    "max_gram": 5
+                },
+                "russian_stemmer": {
+                    "type": "stemmer",
+                    "language": "russian"
+                }
+            },
+            "analyzer": {
+                "warhammer_analyzer": {
+                    "type": "custom",
+                    "tokenizer": "ngram_tokenizer",
+                    "filter": [                                           # 4. Изменен порядок фильтров
+                        "lowercase",
+                        "russian_stop",
+                        "synonym_filter",
+                        "edge_ngram_filter",                              # 5. Ngram после синонимов
+                        "russian_stemmer"
+                    ]
+                },
+                "hashtag_analyzer": {
+                    "type": "custom",
+                    "tokenizer": "hashtag_tokenizer",
+                    "filter": [
+                        "lowercase",
+                        "asciifolding"
+                    ]
+                }
+            }
+        }
+    },
     "mappings": {
         "properties": {
             "title": {
                 "type": "text",
                 "analyzer": "warhammer_analyzer",
                 "fields": {
-                    "english": {
-                        "type": "text",
-                        "analyzer": "english"
-                    }
+                    "keyword": {"type": "keyword"}
                 }
             },
-            "author": {"type": "text"},
-            "tags": {"type": "keyword"},
+            "author": {"type": "keyword"},
+            "link": {"type": "keyword"},
+            "tags": {
+                "type": "text",
+                "analyzer": "hashtag_analyzer",
+                "fields": {
+                    "keyword": {"type": "keyword"}
+                }
+            },
             "structured_content": {
                 "type": "nested",
                 "properties": {
                     "header": {
                         "type": "text",
-                        "analyzer": "warhammer_analyzer",
-                        "fields": {
-                            "raw": {"type": "keyword"}
-                        }
+                        "analyzer": "warhammer_analyzer"
                     },
-                    "content": {
-                        "type": "nested",
-                        "properties": {
-                            "text": {
-                                "type": "text",
-                                "analyzer": "warhammer_analyzer",
-                                "fields": {
-                                    "exact": {"type": "keyword"}
-                                }
-                            }
-                        }
+                    "text": {
+                        "type": "text",
+                        "analyzer": "warhammer_analyzer"
                     }
-                }
-            },
-            "link": {"type": "keyword"}
-        }
-    },
-    "settings": {
-        "analysis": {
-            "filter": {
-                # "multilingual_stop": {
-                #     "type": "stop",
-                #     "stopwords_path": "stopwords.txt",
-                #     "ignore_case": True
-                # },
-                "english_stemmer": {
-                    "type": "stemmer",
-                    "language": "english"
-                },
-                "russian_stemmer": {
-                    "type": "stemmer",
-                    "language": "russian"
-                }
-                # "my_synonyms": {
-                #     "type": "synonym",
-                #     "synonyms_path": "synonyms.txt",
-                #     "tokenizer": "whitespace"
-                # }
-            },
-            "analyzer": {
-                "warhammer_analyzer": {
-                    "type": "custom",
-                    "tokenizer": "standard",
-                    "filter": [
-                        "lowercase",
-                        #"multilingual_stop",
-                        #"my_synonyms",
-                        "english_stemmer",
-                        "russian_stemmer"
-                    ]
                 }
             }
         }
     }
 }
-
 
 es.indices.create(index="warha_news_index", body=index_body)
 print("Индекс успешно создан")

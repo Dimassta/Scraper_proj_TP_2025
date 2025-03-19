@@ -14,16 +14,101 @@ es = Elasticsearch("http://localhost:9200")
 
 PAGE_SIZE = 10
 
+# def search_news(query, page=1):
+#     start_time = time.time()
+#     search_body = {
+#         "query": {
+#             "bool": {
+#                 "should": [
+#                     {
+#                         "multi_match": {
+#                             "query": query,
+#                             "fields": ["title", "author", "tags"]
+#                         }
+#                     },
+#                     {
+#                         "nested": {
+#                             "path": "structured_content",
+#                             "query": {
+#                                 "multi_match": {
+#                                     "query": query,
+#                                     "fields": ["structured_content.header", "structured_content.content.text"]
+#                                 }
+#                             }
+#                         }
+#                     }
+#                 ]
+#             }
+#         },
+#         "highlight": {
+#             "fields": {
+#                 "title": {},
+#                 "structured_content.header": {},
+#                 "structured_content.content.text": {}
+#             },
+#             "pre_tags": ["**"],
+#             "post_tags": ["**"]
+#         }
+#     }
+#
+#     response = es.search(index="warha_news_index", body=search_body)
+#     end_time = time.time()
+#     execution_time = end_time - start_time
+#     return response['hits']['hits'], response['hits']['total']['value'], execution_time
+
 def search_news(query, page=1):
     start_time = time.time()
-    search_body = {
+
+    # Обработка хэштегов
+    if query.startswith("#"):
+        search_body = hashtag_search(query)
+    else:
+        search_body = general_search(query)
+
+    response = es.search(index="warha_news_index", body=search_body)
+    end_time = time.time()
+    return response['hits']['hits'], response['hits']['total']['value'], end_time - start_time
+
+
+def hashtag_search(query):
+    clean_query = query[1:].strip().lower()
+    return {
+        "query": {
+            "bool": {
+                "should": [
+                    {
+                        "term": {
+                            "tags.keyword": {  # Точное совпадение
+                                "value": clean_query,
+                                "boost": 2.0
+                            }
+                        }
+                    },
+                    {
+                        "match": {  # Поиск по токенам
+                            "tags": {
+                                "query": clean_query,
+                                "analyzer": "hashtag_analyzer"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        "highlight": {
+            "fields": {"tags": {}}
+        }
+    }
+
+def general_search(query):
+    return {
         "query": {
             "bool": {
                 "should": [
                     {
                         "multi_match": {
                             "query": query,
-                            "fields": ["title", "author", "tags"]
+                            "fields": ["title^3", "author^2"]
                         }
                     },
                     {
@@ -32,7 +117,7 @@ def search_news(query, page=1):
                             "query": {
                                 "multi_match": {
                                     "query": query,
-                                    "fields": ["structured_content.header", "structured_content.content.text"]
+                                    "fields": ["structured_content.header", "structured_content.text"]
                                 }
                             }
                         }
@@ -44,17 +129,10 @@ def search_news(query, page=1):
             "fields": {
                 "title": {},
                 "structured_content.header": {},
-                "structured_content.content.text": {}
-            },
-            "pre_tags": ["**"],
-            "post_tags": ["**"]
+                "structured_content.text": {}
+            }
         }
     }
-
-    response = es.search(index="warha_news_index", body=search_body)
-    end_time = time.time()
-    execution_time = end_time - start_time
-    return response['hits']['hits'], response['hits']['total']['value'], execution_time
 
 def print_news(news, total, current_page):
     total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE

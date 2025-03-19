@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  elasticsearch:
+    image: elasticsearch:8.7.0
+    container_name: warha_elastic
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - xpack.security.enabled=false
+    volumes:
+      - ./elasticsearch/analysis/stopwords:/usr/share/elasticsearch/config/analysis/stopwords
+      - ./elasticsearch/analysis/synonyms:/usr/share/elasticsearch/config/analysis/synonyms
+    ports:
+      - "9200:9200"
+    networks:
+      - elastic-net
+
+networks:
+  elastic-net:
+    driver: bridge
