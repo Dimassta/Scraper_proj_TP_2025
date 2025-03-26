@@ -12,12 +12,6 @@ index_body = {
     "settings": {
         "analysis": {
             "tokenizer": {
-                "ngram_tokenizer": {
-                    "type": "ngram",
-                    "min_gram": 3,
-                    "max_gram": 4,
-                    "token_chars": ["letter", "digit"]
-                },
                 "hashtag_tokenizer": {
                     "type": "pattern",
                     "pattern": "(#\\w+)",
@@ -27,33 +21,34 @@ index_body = {
             "filter": {
                 "russian_stop": {
                     "type": "stop",
-                    "stopwords_path": "analysis/stopwords/stopwords.txt"  # 1. Путь должен быть относительным внутри контейнера
+                    "stopwords_path": "analysis/stopwords/stopwords.txt"
                 },
                 "synonym_filter": {
                     "type": "synonym",
-                    "synonyms_path": "analysis/synonyms/synonyms.txt",    # 2. Добавлены параметры безопасности
-                    "lenient": True
+                    "synonyms_path": "analysis/synonyms/synonyms.txt",
+                    "lenient": True,
+                    "expand": False
                 },
-                "edge_ngram_filter": {
-                    "type": "edge_ngram",                                 # 3. Исправлен порядок применения
-                    "min_gram": 2,
-                    "max_gram": 5
-                },
-                "russian_stemmer": {
+                "ru_stemmer": {
                     "type": "stemmer",
                     "language": "russian"
+                },
+                "edge_ngram_filter": {
+                    "type": "edge_ngram",
+                    "min_gram": 3,
+                    "max_gram": 15
                 }
             },
             "analyzer": {
                 "warhammer_analyzer": {
                     "type": "custom",
-                    "tokenizer": "ngram_tokenizer",
-                    "filter": [                                           # 4. Изменен порядок фильтров
+                    "tokenizer": "standard",
+                    "filter": [
                         "lowercase",
                         "russian_stop",
                         "synonym_filter",
-                        "edge_ngram_filter",                              # 5. Ngram после синонимов
-                        "russian_stemmer"
+                        "ru_stemmer",
+                        "edge_ngram_filter"
                     ]
                 },
                 "hashtag_analyzer": {
@@ -92,9 +87,15 @@ index_body = {
                         "type": "text",
                         "analyzer": "warhammer_analyzer"
                     },
-                    "text": {
-                        "type": "text",
-                        "analyzer": "warhammer_analyzer"
+                    "content": {
+                        "type": "nested",
+                        "properties": {
+                            "text": {
+                                "type": "text",
+                                "analyzer": "warhammer_analyzer",
+                                "term_vector": "with_positions_offsets"
+                            }
+                        }
                     }
                 }
             }

@@ -14,111 +14,34 @@ es = Elasticsearch("http://localhost:9200")
 
 PAGE_SIZE = 10
 
-# def search_news(query, page=1):
-#     start_time = time.time()
-#     search_body = {
-#         "query": {
-#             "bool": {
-#                 "should": [
-#                     {
-#                         "multi_match": {
-#                             "query": query,
-#                             "fields": ["title", "author", "tags"]
-#                         }
-#                     },
-#                     {
-#                         "nested": {
-#                             "path": "structured_content",
-#                             "query": {
-#                                 "multi_match": {
-#                                     "query": query,
-#                                     "fields": ["structured_content.header", "structured_content.content.text"]
-#                                 }
-#                             }
-#                         }
-#                     }
-#                 ]
-#             }
-#         },
-#         "highlight": {
-#             "fields": {
-#                 "title": {},
-#                 "structured_content.header": {},
-#                 "structured_content.content.text": {}
-#             },
-#             "pre_tags": ["**"],
-#             "post_tags": ["**"]
-#         }
-#     }
-#
-#     response = es.search(index="warha_news_index", body=search_body)
-#     end_time = time.time()
-#     execution_time = end_time - start_time
-#     return response['hits']['hits'], response['hits']['total']['value'], execution_time
-
 def search_news(query, page=1):
     start_time = time.time()
 
-    # Обработка хэштегов
-    if query.startswith("#"):
-        search_body = hashtag_search(query)
-    else:
-        search_body = general_search(query)
-
-    response = es.search(index="warha_news_index", body=search_body)
-    end_time = time.time()
-    return response['hits']['hits'], response['hits']['total']['value'], end_time - start_time
-
-
-def hashtag_search(query):
-    clean_query = query[1:].strip().lower()
-    return {
-        "query": {
-            "bool": {
-                "should": [
-                    {
-                        "term": {
-                            "tags.keyword": {  # Точное совпадение
-                                "value": clean_query,
-                                "boost": 2.0
-                            }
-                        }
-                    },
-                    {
-                        "match": {  # Поиск по токенам
-                            "tags": {
-                                "query": clean_query,
-                                "analyzer": "hashtag_analyzer"
-                            }
-                        }
-                    }
-                ]
-            }
-        },
-        "highlight": {
-            "fields": {"tags": {}}
-        }
-    }
-
-def general_search(query):
-    return {
+    search_body = {
         "query": {
             "bool": {
                 "should": [
                     {
                         "multi_match": {
                             "query": query,
-                            "fields": ["title^3", "author^2"]
+                            "fields": ["title^3", "author^2", "tags"],
+                            "fuzziness": "AUTO",
+                            "prefix_length": 2
                         }
                     },
                     {
                         "nested": {
                             "path": "structured_content",
                             "query": {
-                                "multi_match": {
-                                    "query": query,
-                                    "fields": ["structured_content.header", "structured_content.text"]
-                                }
+                                "match": {"structured_content.header": query}
+                            }
+                        }
+                    },
+                    {
+                        "nested": {
+                            "path": "structured_content.content",
+                            "query": {
+                                "match": {"structured_content.content.text": query}
                             }
                         }
                     }
@@ -127,12 +50,28 @@ def general_search(query):
         },
         "highlight": {
             "fields": {
-                "title": {},
-                "structured_content.header": {},
-                "structured_content.text": {}
-            }
+                "title": {"type": "plain"},
+                "structured_content.header": {"type": "plain"},
+                "structured_content.content.text": {
+                    "type": "plain",
+                    "fragment_size": 150,
+                    "number_of_fragments": 3
+                }
+            },
+            "pre_tags": ["<em>"],
+            "post_tags": ["</em>"]
         }
     }
+
+    response = es.search(
+        index="warha_news_index",
+        body=search_body,
+        size=PAGE_SIZE,
+        from_=(page - 1) * PAGE_SIZE
+    )
+
+    end_time = time.time()
+    return response['hits']['hits'], response['hits']['total']['value'], end_time - start_time
 
 def print_news(news, total, current_page):
     total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
@@ -158,21 +97,10 @@ def print_news(news, total, current_page):
             print(f"\nСовпадения в тексте:")
             for text in highlights['structured_content.content.text']:
                 print(f"- {text}")
-    # for article in news:
-    #     print(f"\nЗаголовок: {article['_source']['title']}")
-    #     print(f"Автор: {article['_source']['author']}")
-    #     #print(f"Дата: {article['_source']['date']}")
-    #     print(f"Ссылка: {article['_source']['link']}")
-    #
-    #     # Вывод подсвеченного текста
-    #     if 'highlight' in article:
-    #         if 'title' in article['highlight']:
-    #             print(f"Совпадение в заголовке: {article['highlight']['title'][0]}")
-    #         if 'structured_content.content.text' in article['highlight']:
-    #             print(f"Совпадение в тексте: {article['highlight']['structured_content.content.text'][0]}")
+
     #
         print(f"Рейтинг: {article['_score']}")
-        print("-" * 40)
+        print("*" * 40)
 
 def search_menu(query):
     current_page = 1
